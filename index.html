@@ -426,10 +426,16 @@ function ImportView({onImport,onBack}){
   const [prefix,setPrefix]=useState('673');
   const [drag,setDrag]=useState(false);
   const [importing,setImporting]=useState(false);
+  const [importMode,setImportMode]=useState('update_orders');
   const fileRef=useRef();
   const FIELDS=[
     {key:'name',label:'Customer Name ✱'},{key:'phone',label:'Phone Number ✱'},
     {key:'colour',label:'Shirt Colour'},{key:'size',label:'Size'},{key:'style',label:'Style / Sleeve'},
+  ];
+  const MODES=[
+    {id:'update_orders',label:'Update existing orders',desc:'Replaces order items for existing customers. Keeps their status, notes & payment proof. Best for correcting mistakes.',recommended:true},
+    {id:'add_new',label:'Add new customers only',desc:'Skips anyone already in the system. Only adds brand new phone numbers. Safe top-up.',recommended:false},
+    {id:'merge_orders',label:'Add orders on top',desc:'Appends new order rows to existing customers. Use when customers have genuinely ordered additional items.',recommended:false},
   ];
   function autoIdx(key,hdrs){
     return hdrs.findIndex(h=>{
@@ -477,14 +483,14 @@ function ImportView({onImport,onBack}){
       if(colMap.style)  o.style =String(row[parseInt(colMap.style)] ??'').trim();
       groups[key].orders.push(o);
     });
-    await onImport(Object.values(groups));
+    await onImport(Object.values(groups),importMode);
     setImporting(false);
   }
   return (
     <div style={{maxWidth:700,margin:'0 auto',padding:'24px 20px 80px'}}>
       <button onClick={onBack} style={{display:'flex',alignItems:'center',gap:6,background:'transparent',border:'none',cursor:'pointer',color:C.textMid,fontFamily:'inherit',fontSize:13,marginBottom:20,padding:0}}><IBack size={14}/> Back</button>
       <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:32,fontWeight:700,color:C.text,marginBottom:4}}>Import Orders</div>
-      <div style={{fontSize:12,color:C.textDim,marginBottom:24}}>Upload Excel or CSV. Rows with the same phone number are merged into one customer.</div>
+      <div style={{fontSize:12,color:C.textDim,marginBottom:24}}>Upload Excel or CSV. Rows with the same phone number are grouped into one customer.</div>
       {step==='upload'&&(
         <Card>
           <input type="file" ref={fileRef} accept=".xlsx,.xls,.csv" style={{display:'none'}} onChange={e=>handleFile(e.target.files[0])}/>
@@ -518,6 +524,26 @@ function ImportView({onImport,onBack}){
             <input value={prefix} onChange={e=>setPrefix(e.target.value.replace(/\D/g,''))} maxLength={5}
               style={{width:80,background:C.card,border:`1px solid ${C.border}`,color:C.text,padding:'7px 10px',borderRadius:8,fontFamily:'monospace',fontSize:13,outline:'none'}}/>
             <span style={{fontSize:11,color:C.textDim}}>Brunei: 673 · Singapore: 65 · Malaysia: 60</span>
+          </div>
+          <div style={{paddingTop:14,borderTop:`1px solid ${C.border}`,marginBottom:20}}>
+            <div style={{fontSize:10,fontWeight:600,letterSpacing:'0.8px',textTransform:'uppercase',color:C.textDim,marginBottom:10}}>If a customer already exists (matched by phone)</div>
+            <div style={{display:'flex',flexDirection:'column',gap:8}}>
+              {MODES.map(m=>(
+                <div key={m.id} onClick={()=>setImportMode(m.id)}
+                  style={{display:'flex',alignItems:'flex-start',gap:12,padding:'12px 14px',borderRadius:10,border:`1.5px solid ${importMode===m.id?C.terra:C.border}`,background:importMode===m.id?C.terraDim:C.surface,cursor:'pointer',transition:'all 0.15s'}}>
+                  <div style={{width:16,height:16,borderRadius:'50%',border:`2px solid ${importMode===m.id?C.terra:C.border}`,background:importMode===m.id?C.terra:'transparent',flexShrink:0,marginTop:1,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    {importMode===m.id&&<div style={{width:6,height:6,borderRadius:'50%',background:'#fff'}}/>}
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:2}}>
+                      <span style={{fontSize:13,fontWeight:600,color:C.text}}>{m.label}</span>
+                      {m.recommended&&<span style={{fontSize:9,fontWeight:700,background:C.sage,color:'#fff',padding:'1px 7px',borderRadius:20,letterSpacing:'0.5px',textTransform:'uppercase'}}>Recommended</span>}
+                    </div>
+                    <div style={{fontSize:11,color:C.textDim,lineHeight:1.5}}>{m.desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
           <div style={{fontSize:10,fontWeight:600,letterSpacing:'0.8px',textTransform:'uppercase',color:C.textDim,marginBottom:8}}>Preview — first 3 rows</div>
           <div style={{overflowX:'auto',borderRadius:8,border:`1px solid ${C.border}`,marginBottom:20}}>
@@ -785,17 +811,29 @@ function MainApp({session}){
     return ()=>sb.removeChannel(channel);
   },[]);
 
-  async function handleImport(groups){
+  async function handleImport(groups,mode='update_orders'){
     try{
       const toInsert=[],toUpdate=[];
       groups.forEach(g=>{
         const ex=customers.find(c=>c.phone&&c.phone===g.phone);
-        if(ex) toUpdate.push({id:ex.id,orders:[...(ex.orders||[]),...g.orders]});
-        else   toInsert.push({name:g.name,phone:g.phone,orders:g.orders,status:'new',notes:'',status_history:[]});
+        if(ex){
+          if(mode==='add_new'){
+            // skip — customer already exists
+          } else if(mode==='update_orders'){
+            // replace orders, keep status/notes/proof
+            toUpdate.push({id:ex.id,orders:g.orders});
+          } else {
+            // merge_orders — append new rows on top
+            toUpdate.push({id:ex.id,orders:[...(ex.orders||[]),...g.orders]});
+          }
+        } else {
+          toInsert.push({name:g.name,phone:g.phone,orders:g.orders,status:'new',notes:'',status_history:[]});
+        }
       });
       if(toInsert.length) await dbInsertCustomers(toInsert);
       for(const u of toUpdate) await dbUpdateCustomer(u.id,{orders:u.orders});
-      showToast(`Imported: ${toInsert.length} new · ${toUpdate.length} merged`);
+      const modeLabel=mode==='add_new'?'skipped existing':mode==='update_orders'?'orders updated':'orders merged';
+      showToast(`${toInsert.length} new · ${toUpdate.length} ${modeLabel}`);
       setView('dashboard');
     }catch(err){showToast('Import failed: '+err.message,'error');}
   }
