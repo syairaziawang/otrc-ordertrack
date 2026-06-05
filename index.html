@@ -95,7 +95,7 @@ const STATUS_NEXT_LABEL = {
   paid:'Mark Ready for Pickup',ready:'Mark as Collected',
 };
 const DEFAULT_TEMPLATES = {
-  invoice:`Hi {name}! 👋\n\nThank you for your order! Here is your summary:\n\n{orders}\n\nKindly proceed with payment at your convenience. Feel free to reach out if you have any questions! 🙏`,
+  invoice:`Hi {name}! 👋\n\nThank you for your order! Here is your summary:\n\n{orders}\n\nTo confirm your order, please upload your payment screenshot here:\n👉 {upload_link}\n\nFeel free to reach out if you have any questions! 🙏`,
   ready:`Hi {name}! 🎉\n\nGreat news — your order is ready for pickup!\n\n{orders}\n\nPlease contact us to arrange collection. Looking forward to seeing you soon! 😊`,
 };
 
@@ -119,11 +119,15 @@ function buildOrderText(orders){
     return `  ${i+1}. ${p.join(' | ')}`;
   }).join('\n');
 }
+function buildUploadLink(customerId){
+  return window.location.origin+window.location.pathname+'?upload='+customerId;
+}
 function buildMsg(tmpl,c){
   return tmpl.replace(/{name}/g,c.name).replace(/{phone}/g,c.phone||'')
-    .replace(/{orders}/g,buildOrderText(c.orders)).replace(/{count}/g,String((c.orders||[]).length));
+    .replace(/{orders}/g,buildOrderText(c.orders)).replace(/{count}/g,String((c.orders||[]).length))
+    .replace(/{upload_link}/g,buildUploadLink(c.id));
 }
-const waLink = (phone,msg) => `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+const waLink=(phone,msg)=>`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
 
 async function compressImage(file){
   return new Promise((resolve,reject)=>{
@@ -220,6 +224,162 @@ function SecTitle({icon:Icon,children,sx={}}){
 
 function Spinner(){
   return <div style={{width:18,height:18,border:`2px solid ${C.border}`,borderTop:`2px solid ${C.terra}`,borderRadius:'50%',animation:'spin 0.8s linear infinite',display:'inline-block'}}/>;
+}
+
+/* ══ CUSTOMER UPLOAD PAGE (public — no login needed) ════════════════ */
+function CustomerUploadPage({customerId}){
+  const [customer,setCustomer]=useState(null);
+  const [pageLoading,setPageLoading]=useState(true);
+  const [notFound,setNotFound]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const [done,setDone]=useState(false);
+  const [uploadErr,setUploadErr]=useState('');
+  const fileRef=useRef();
+
+  useEffect(()=>{
+    sb.from('customers').select('*').eq('id',customerId).maybeSingle()
+      .then(({data,error})=>{
+        if(error||!data) setNotFound(true);
+        else setCustomer(data);
+        setPageLoading(false);
+      });
+  },[customerId]);
+
+  async function handleFile(e){
+    const file=e.target.files[0];if(!file) return;
+    if(file.size>8*1024*1024){setUploadErr('Image must be under 8MB.');return;}
+    setUploadErr('');setUploading(true);
+    try{
+      const dataUrl=await compressImage(file);
+      const blob=await fetch(dataUrl).then(r=>r.blob());
+      const path=`${customerId}/proof.jpg`;
+      const {error:upErr}=await sb.storage.from('proofs').upload(path,blob,{upsert:true,contentType:'image/jpeg'});
+      if(upErr) throw upErr;
+      const {data:urlData}=sb.storage.from('proofs').getPublicUrl(path);
+      const {error:dbErr}=await sb.from('customers').update({
+        payment_proof_url:urlData.publicUrl,
+        payment_proof_at:new Date().toISOString(),
+        updated_at:new Date().toISOString(),
+      }).eq('id',customerId);
+      if(dbErr) throw dbErr;
+      setDone(true);
+    }catch(e){setUploadErr('Upload failed: '+e.message);}
+    setUploading(false);
+  }
+
+  /* ── Loading ── */
+  if(pageLoading) return (
+    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+      <Spinner/>
+    </div>
+  );
+
+  /* ── Not found ── */
+  if(notFound) return (
+    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:20,fontFamily:'Jost,system-ui,sans-serif'}}>
+      <div style={{textAlign:'center',maxWidth:400}}>
+        <div style={{fontSize:52,marginBottom:16}}>🔍</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:26,fontWeight:700,color:C.text,marginBottom:8}}>Order not found</div>
+        <div style={{fontSize:13,color:C.textDim,lineHeight:1.7}}>This link may be invalid or expired. Please contact us for help.</div>
+      </div>
+    </div>
+  );
+
+  /* ── Success ── */
+  if(done) return (
+    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',padding:20,fontFamily:'Jost,system-ui,sans-serif'}}>
+      <div style={{textAlign:'center',maxWidth:420}}>
+        <div style={{width:80,height:80,borderRadius:'50%',background:C.sagePale,border:`2px solid ${C.sage}`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 20px',fontSize:36}}>✓</div>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:30,fontWeight:700,color:C.text,marginBottom:10}}>Thank you, {customer?.name}!</div>
+        <div style={{fontSize:13,color:C.textMid,lineHeight:1.75}}>Your payment screenshot has been received. We'll process your order and reach out when it's ready for pickup. 🎉</div>
+      </div>
+    </div>
+  );
+
+  const alreadyUploaded=!!customer?.payment_proof_url;
+
+  /* ── Upload page ── */
+  return (
+    <div style={{minHeight:'100vh',background:C.bg,fontFamily:'Jost,system-ui,sans-serif'}}>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+
+      {/* Navbar */}
+      <div style={{background:C.text,padding:'14px 24px',display:'flex',alignItems:'center'}}>
+        <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontWeight:700,fontSize:20,color:C.bg}}>
+          <span style={{color:C.peach}}>●</span> OrderTrack
+        </div>
+      </div>
+
+      <div style={{maxWidth:500,margin:'0 auto',padding:'32px 20px 60px'}}>
+
+        {/* Greeting */}
+        <div style={{marginBottom:24}}>
+          <div style={{fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:32,fontWeight:700,color:C.text,marginBottom:6}}>
+            Hi {customer.name}! 👋
+          </div>
+          <div style={{fontSize:13,color:C.textMid,lineHeight:1.75}}>
+            {alreadyUploaded
+              ?'We already have your payment screenshot — you can upload a new one below if needed.'
+              :'Please upload your payment screenshot to confirm your order.'}
+          </div>
+        </div>
+
+        {/* Order Summary */}
+        <Card>
+          <SecTitle icon={IBox}>Your Order ({(customer.orders||[]).length} item{(customer.orders||[]).length!==1?'s':''})</SecTitle>
+          <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+            {(customer.orders||[]).map((o,i)=>(
+              <div key={i} style={{background:C.bg2,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 14px',fontSize:12,color:C.textMid,minWidth:100}}>
+                <div style={{fontWeight:700,color:C.text,fontSize:10,textTransform:'uppercase',letterSpacing:'0.5px',marginBottom:4}}>Item {i+1}</div>
+                {o.colour&&<div style={{marginBottom:2}}>🎨 {o.colour}</div>}
+                {o.size  &&<div style={{marginBottom:2}}>📐 {o.size}</div>}
+                {o.style &&<div>👕 {o.style}</div>}
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Existing proof preview */}
+        {alreadyUploaded&&(
+          <Card>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,color:'#3D6B3A',fontSize:12,fontWeight:500}}>
+              <ICheck size={14} color={C.sage}/> Screenshot already on file
+            </div>
+            <img src={customer.payment_proof_url} alt="Uploaded proof"
+              style={{width:'100%',maxHeight:220,objectFit:'contain',borderRadius:8,border:`1px solid ${C.border}`,background:C.bg2}}/>
+            {customer.payment_proof_at&&<div style={{fontSize:10,color:C.textDim,marginTop:8}}>Uploaded {fmtDate(customer.payment_proof_at)}</div>}
+          </Card>
+        )}
+
+        {/* Upload card */}
+        <Card>
+          <input type="file" ref={fileRef} accept="image/*" style={{display:'none'}} onChange={handleFile}/>
+
+          {uploadErr&&(
+            <div style={{background:'#fee2e2',border:'1px solid #fca5a5',color:'#991b1b',padding:'10px 14px',borderRadius:8,fontSize:12,marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
+              <IAlert size={13} color="#991b1b"/> {uploadErr}
+            </div>
+          )}
+
+          <div style={{border:`1.5px dashed ${C.border}`,borderRadius:10,padding:'28px 16px',textAlign:'center',background:C.bg2,marginBottom:14,cursor:'pointer',transition:'all 0.2s'}}
+            onClick={()=>!uploading&&fileRef.current.click()}>
+            <IImg size={28} style={{margin:'0 auto 10px',color:C.textDim}}/>
+            <div style={{fontSize:13,color:C.textMid,fontWeight:500}}>
+              {alreadyUploaded?'Tap to upload a new screenshot':'Tap to choose your screenshot'}
+            </div>
+            <div style={{fontSize:11,color:C.textDim,marginTop:4}}>JPG or PNG · auto-compressed</div>
+          </div>
+
+          <button onClick={()=>fileRef.current.click()} disabled={uploading}
+            style={{width:'100%',background:C.terra,color:'#fff',border:'none',padding:'14px',borderRadius:10,fontFamily:'Cormorant Garamond,Georgia,serif',fontSize:18,fontWeight:700,cursor:uploading?'not-allowed':'pointer',opacity:uploading?0.7:1,display:'flex',alignItems:'center',justifyContent:'center',gap:10}}>
+            {uploading?<><Spinner/> Uploading…</>:<><IUpload size={16}/> {alreadyUploaded?'Replace Screenshot':'Upload Payment Screenshot'}</>}
+          </button>
+        </Card>
+
+      </div>
+    </div>
+  );
 }
 
 /* ══ LOGIN VIEW ══════════════════════════════════════════════════════ */
@@ -744,7 +904,7 @@ function DetailView({customer:c,templates,onBack,onUpdate,onUploadProof,onRemove
 function TemplatesView({templates,onSave,onBack}){
   const [tmpl,setTmpl]=useState({...templates});
   const [saving,setSaving]=useState(false);
-  const TAGS=['{name}','{phone}','{orders}','{count}'];
+  const TAGS=['{name}','{phone}','{orders}','{count}','{upload_link}'];
   const ITEMS=[{key:'invoice',label:'Invoice / Confirmation Message',accent:C.sage},{key:'ready',label:'Ready for Pickup Message',accent:'#6BA4C9'}];
   async function doSave(){setSaving(true);await onSave(tmpl);setSaving(false);}
   return (
@@ -813,45 +973,29 @@ function MainApp({session}){
 
   async function handleImport(groups,mode='update_orders'){
     try{
-      const toInsert=[],toUpdate=[],skipped=[];
+      const toInsert=[],toUpdate=[];
       groups.forEach(g=>{
         const ex=customers.find(c=>c.phone&&c.phone===g.phone);
         if(ex){
           if(mode==='add_new'){
-            skipped.push(g.name);
+            // skip — customer already exists
           } else if(mode==='update_orders'){
+            // replace orders, keep status/notes/proof
             toUpdate.push({id:ex.id,orders:g.orders});
           } else {
+            // merge_orders — append new rows on top
             toUpdate.push({id:ex.id,orders:[...(ex.orders||[]),...g.orders]});
           }
         } else {
           toInsert.push({name:g.name,phone:g.phone,orders:g.orders,status:'new',notes:'',status_history:[]});
         }
       });
-
-      if(toInsert.length===0&&toUpdate.length===0&&skipped.length>0){
-        showToast(`Nothing imported — ${skipped.length} existing customer${skipped.length>1?'s':''} skipped (Add new only mode)`,'error');
-        return;
-      }
-
       if(toInsert.length) await dbInsertCustomers(toInsert);
       for(const u of toUpdate) await dbUpdateCustomer(u.id,{orders:u.orders});
-
-      // Force-reload from Supabase so the dashboard is always up to date,
-      // regardless of whether the real-time subscription fires in time.
-      const {customers:fresh}=await dbLoadAll();
-      setCustomers(fresh);
-
-      const parts=[];
-      if(toInsert.length) parts.push(`${toInsert.length} new customer${toInsert.length>1?'s':''} added`);
-      if(toUpdate.length) parts.push(`${toUpdate.length} updated`);
-      if(skipped.length) parts.push(`${skipped.length} skipped`);
-      showToast(parts.join(' · '));
+      const modeLabel=mode==='add_new'?'skipped existing':mode==='update_orders'?'orders updated':'orders merged';
+      showToast(`${toInsert.length} new · ${toUpdate.length} ${modeLabel}`);
       setView('dashboard');
-    }catch(err){
-      console.error('Import error:',err);
-      showToast('Import failed: '+err.message,'error');
-    }
+    }catch(err){showToast('Import failed: '+err.message,'error');}
   }
 
   async function handleUpdate(id,updates){
@@ -946,13 +1090,18 @@ function MainApp({session}){
 
 /* ══ APP ROOT (handles auth) ══════════════════════════════════════════ */
 function App(){
-  const [session,setSession]=useState(undefined); // undefined = loading
+  const [session,setSession]=useState(undefined);
+  const uploadId=new URLSearchParams(window.location.search).get('upload');
 
   useEffect(()=>{
+    if(uploadId) return; // skip auth flow entirely for customer upload pages
     sb.auth.getSession().then(({data:{session}})=>setSession(session));
     const {data:{subscription}}=sb.auth.onAuthStateChange((_,session)=>setSession(session));
     return ()=>subscription.unsubscribe();
-  },[]);
+  },[uploadId]);
+
+  // Customer upload page — no login required
+  if(uploadId) return <CustomerUploadPage customerId={uploadId}/>;
 
   if(session===undefined) return (
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center'}}>
