@@ -813,29 +813,45 @@ function MainApp({session}){
 
   async function handleImport(groups,mode='update_orders'){
     try{
-      const toInsert=[],toUpdate=[];
+      const toInsert=[],toUpdate=[],skipped=[];
       groups.forEach(g=>{
         const ex=customers.find(c=>c.phone&&c.phone===g.phone);
         if(ex){
           if(mode==='add_new'){
-            // skip — customer already exists
+            skipped.push(g.name);
           } else if(mode==='update_orders'){
-            // replace orders, keep status/notes/proof
             toUpdate.push({id:ex.id,orders:g.orders});
           } else {
-            // merge_orders — append new rows on top
             toUpdate.push({id:ex.id,orders:[...(ex.orders||[]),...g.orders]});
           }
         } else {
           toInsert.push({name:g.name,phone:g.phone,orders:g.orders,status:'new',notes:'',status_history:[]});
         }
       });
+
+      if(toInsert.length===0&&toUpdate.length===0&&skipped.length>0){
+        showToast(`Nothing imported — ${skipped.length} existing customer${skipped.length>1?'s':''} skipped (Add new only mode)`,'error');
+        return;
+      }
+
       if(toInsert.length) await dbInsertCustomers(toInsert);
       for(const u of toUpdate) await dbUpdateCustomer(u.id,{orders:u.orders});
-      const modeLabel=mode==='add_new'?'skipped existing':mode==='update_orders'?'orders updated':'orders merged';
-      showToast(`${toInsert.length} new · ${toUpdate.length} ${modeLabel}`);
+
+      // Force-reload from Supabase so the dashboard is always up to date,
+      // regardless of whether the real-time subscription fires in time.
+      const {customers:fresh}=await dbLoadAll();
+      setCustomers(fresh);
+
+      const parts=[];
+      if(toInsert.length) parts.push(`${toInsert.length} new customer${toInsert.length>1?'s':''} added`);
+      if(toUpdate.length) parts.push(`${toUpdate.length} updated`);
+      if(skipped.length) parts.push(`${skipped.length} skipped`);
+      showToast(parts.join(' · '));
       setView('dashboard');
-    }catch(err){showToast('Import failed: '+err.message,'error');}
+    }catch(err){
+      console.error('Import error:',err);
+      showToast('Import failed: '+err.message,'error');
+    }
   }
 
   async function handleUpdate(id,updates){
