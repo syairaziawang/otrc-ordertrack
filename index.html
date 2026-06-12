@@ -775,8 +775,107 @@ function FinanceView({customers,expenses,onAddExpense,onDeleteExpense,onExport})
   );
 }
 
+/* ══ NEW ORDER MODAL ═════════════════════════════════════════════════ */
+function NewOrderModal({onClose,onSave}){
+  const BLANK={colour:'',size:'',style:''};
+  const [name,   setName]  =useState('');
+  const [phone,  setPhone] =useState('');
+  const [items,  setItems] =useState([{...BLANK}]);
+  const [notes,  setNotes] =useState('');
+  const [price,  setPrice] =useState('');
+  const [cost,   setCost]  =useState('');
+  const [saving, setSaving]=useState(false);
+  const [err,    setErr]   =useState('');
+
+  function addItem(){ setItems(p=>[...p,{...BLANK}]); }
+  function removeItem(i){ setItems(p=>p.filter((_,j)=>j!==i)); }
+  function updateItem(i,k,v){ setItems(p=>p.map((it,j)=>j===i?{...it,[k]:v}:it)); }
+
+  async function handleSave(){
+    if(!name.trim()){setErr('Customer name is required.');return;}
+    setSaving(true);setErr('');
+    try{
+      const customer={
+        name:name.trim(),
+        phone:formatPhone(phone),
+        orders:items.filter(o=>o.colour||o.size||o.style),
+        status:'new',notes:notes.trim(),status_history:[],
+        price:parseFloat(price)||null,cost:parseFloat(cost)||null,
+      };
+      await onSave(customer);
+    }catch(e){setErr(e.message);}
+    setSaving(false);
+  }
+
+  const inp={width:'100%',background:C.bg,border:`1px solid ${C.border}`,color:C.text,padding:'9px 12px',borderRadius:2,fontFamily:'inherit',fontSize:13,outline:'none'};
+  const lbl={fontSize:10,letterSpacing:'0.8px',textTransform:'uppercase',color:C.textDim,fontWeight:600,marginBottom:5,display:'block'};
+
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:600,display:'flex'}}>
+      <div style={{flex:1,background:'rgba(28,24,22,0.45)',backdropFilter:'blur(3px)',cursor:'pointer'}} onClick={onClose}/>
+      <div style={{width:'min(560px,100%)',height:'100%',background:C.bg,boxShadow:'-8px 0 40px rgba(0,0,0,0.18)',display:'flex',flexDirection:'column',overflowY:'auto'}}>
+        {/* Header */}
+        <div style={{position:'sticky',top:0,background:C.bg,borderBottom:`1px solid ${C.border}`,padding:'16px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0,zIndex:10}}>
+          <div style={{fontFamily:FONT_SERIF,fontSize:22,fontWeight:500,letterSpacing:'-.01em',color:C.text}}>New Order</div>
+          <button onClick={onClose} style={{width:32,height:32,borderRadius:'50%',background:C.bg2,border:`1px solid ${C.border}`,cursor:'pointer',color:C.textMid,display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,lineHeight:1}}>×</button>
+        </div>
+        {/* Body */}
+        <div style={{flex:1,padding:'20px',overflowY:'auto'}}>
+          {err&&<div style={{background:'#fee2e2',border:'1px solid #fca5a5',color:'#991b1b',padding:'10px 14px',borderRadius:2,fontSize:12,marginBottom:14,display:'flex',alignItems:'center',gap:8}}><IAlert size={13} color="#991b1b"/> {err}</div>}
+          {/* Customer */}
+          <Card sx={{marginBottom:14}}>
+            <SecTitle icon={IBox}>Customer Info</SecTitle>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+              <div><label style={lbl}>Name *</label><input value={name} onChange={e=>setName(e.target.value)} placeholder="Full name" style={inp}/></div>
+              <div><label style={lbl}>Phone</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="e.g. 7123456" style={inp}/></div>
+            </div>
+            <div><label style={lbl}>Notes</label><textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Internal notes…" style={{...inp,resize:'vertical',minHeight:60,lineHeight:1.6}}/></div>
+          </Card>
+          {/* Items */}
+          <Card sx={{marginBottom:14}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+              <div style={{fontWeight:600,fontSize:13.5,color:C.text,display:'flex',alignItems:'center',gap:8}}><IBox size={15} color={C.textDim}/> Items ({items.length})</div>
+              <Btn variant="ghost" small onClick={addItem}><IPlus size={11}/> Add Item</Btn>
+            </div>
+            {items.map((item,i)=>(
+              <div key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:2,padding:'12px 14px',marginBottom:8}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                  <div style={{fontSize:10,fontWeight:600,color:C.textDim,textTransform:'uppercase',letterSpacing:'0.1em'}}>Item {i+1}</div>
+                  {items.length>1&&<button onClick={()=>removeItem(i)} style={{background:'transparent',border:'none',cursor:'pointer',color:C.textDim,padding:2,display:'flex'}}><ITrash size={12}/></button>}
+                </div>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                  {[{k:'colour',l:'Colour'},{k:'size',l:'Size'},{k:'style',l:'Style'}].map(f=>(
+                    <div key={f.k}>
+                      <div style={{fontSize:9.5,fontWeight:600,color:C.textDim,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>{f.l}</div>
+                      <input value={item[f.k]} onChange={e=>updateItem(i,f.k,e.target.value)} placeholder={f.l}
+                        style={{width:'100%',background:C.surface,border:`1px solid ${C.border}`,color:C.text,padding:'7px 10px',borderRadius:2,fontFamily:'inherit',fontSize:12,outline:'none'}}/>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </Card>
+          {/* Pricing */}
+          <Card>
+            <SecTitle icon={IDollar}>Pricing (optional)</SecTitle>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+              <div><label style={lbl}>Selling Price (BND)</label><input type="number" step="0.01" min="0" value={price} onChange={e=>setPrice(e.target.value)} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/></div>
+              <div><label style={lbl}>Order Cost (BND)</label><input type="number" step="0.01" min="0" value={cost} onChange={e=>setCost(e.target.value)} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/></div>
+            </div>
+          </Card>
+        </div>
+        {/* Footer */}
+        <div style={{flexShrink:0,borderTop:`1px solid ${C.border}`,padding:'14px 20px',display:'flex',gap:10,background:C.bg}}>
+          <Btn variant="terra" onClick={handleSave} disabled={saving}>{saving?<><Spinner/> Saving…</>:<><ICheck size={13}/> Create Order</>}</Btn>
+          <Btn variant="ghost" onClick={onClose}><IX size={13}/> Cancel</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ══ DASHBOARD VIEW ══════════════════════════════════════════════════ */
-function DashboardView({customers,templates,search,setSearch,statusFilter,setStatusFilter,onOpenDetail,onDelete,onUpdateCustomer,onRefresh,refreshing,showToast}){
+function DashboardView({customers,templates,search,setSearch,statusFilter,setStatusFilter,onOpenDetail,onDelete,onUpdateCustomer,onRefresh,refreshing,showToast,onNewOrder}){
   const stats=STATUS_ORDER.reduce((a,s)=>({...a,[s]:customers.filter(c=>c.status===s).length}),{});
   const filtered=customers.filter(c=>{
     const q=search.toLowerCase();
@@ -840,6 +939,7 @@ function DashboardView({customers,templates,search,setSearch,statusFilter,setSta
         <Btn variant="ghost" small onClick={onRefresh} disabled={refreshing} sx={{whiteSpace:'nowrap'}}>
           <IRefresh size={13}/> {refreshing?'Refreshing…':'Refresh'}
         </Btn>
+        <Btn variant="terra" small onClick={onNewOrder} sx={{whiteSpace:'nowrap'}}><IPlus size={13}/> New Order</Btn>
         <Btn variant="ghost" small onClick={exportCSV} sx={{whiteSpace:'nowrap'}}><IDown size={13}/> Export CSV</Btn>
       </div>
 
@@ -1072,7 +1172,47 @@ function DetailView({customer:c,templates,onClose,onUpdate,onUploadProof,onRemov
   const [proofUploading,setPU]  =useState(false);
   const fileRef=useRef();
 
+  // ── Edit mode state ──
+  const [editMode,setEditMode]=useState(false);
+  const [editName, setEditName] =useState(c.name||'');
+  const [editPhone,setEditPhone]=useState(c.phone||'');
+  const [editOrders,setEditOrders]=useState(c.orders||[]);
+  const [editSaving,setEditSaving]=useState(false);
+
   useEffect(()=>{setNotes(c.notes||'');},[c.id,c.notes]);
+  useEffect(()=>{
+    if(!editMode){
+      setEditName(c.name||'');
+      setEditPhone(c.phone||'');
+      setEditOrders(c.orders||[]);
+    }
+  },[c.id,editMode]);
+
+  function startEdit(){
+    setEditName(c.name||'');
+    setEditPhone(c.phone||'');
+    setEditOrders((c.orders||[]).map(o=>({...o})));
+    setEditMode(true);
+  }
+  function cancelEdit(){ setEditMode(false); }
+  async function saveEdit(){
+    if(!editName.trim()){showToast('Name is required','error');return;}
+    setEditSaving(true);
+    try{
+      await onUpdate({
+        name:editName.trim(),
+        phone:formatPhone(editPhone),
+        orders:editOrders,
+      });
+      showToast('Order updated');
+      setEditMode(false);
+    }catch(e){showToast('Save failed: '+e.message,'error');}
+    setEditSaving(false);
+  }
+
+  function addEditItem(){ setEditOrders(p=>[...p,{colour:'',size:'',style:''}]); }
+  function removeEditItem(i){ setEditOrders(p=>p.filter((_,j)=>j!==i)); }
+  function updateEditItem(i,k,v){ setEditOrders(p=>p.map((it,j)=>j===i?{...it,[k]:v}:it)); }
 
   const invMsg=buildMsg(templates.invoice,c);
   const rdyMsg=buildMsg(templates.ready,c);
@@ -1119,17 +1259,36 @@ function DetailView({customer:c,templates,onClose,onUpdate,onUploadProof,onRemov
 
       {/* ── Sticky header ── */}
       <div style={{position:'sticky',top:0,background:C.bg,borderBottom:`1px solid ${C.border}`,padding:'14px 20px',display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,zIndex:10,flexShrink:0}}>
-        <div style={{minWidth:0}}>
-          <div style={{fontFamily:'Newsreader,Georgia,serif',fontSize:22,fontWeight:500,letterSpacing:'-.01em',color:C.text,lineHeight:1.1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.name}</div>
-          <div style={{marginTop:5,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-            <StatusBadge status={c.status}/>
-            {c.phone&&<span style={{fontSize:11,color:C.textDim,fontFamily:'monospace'}}>+{c.phone}</span>}
-          </div>
+        <div style={{minWidth:0,flex:1}}>
+          {editMode?(
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+              <input value={editName} onChange={e=>setEditName(e.target.value)} placeholder="Name"
+                style={{background:C.bg,border:`1.5px solid ${C.terra}`,color:C.text,padding:'7px 11px',borderRadius:2,fontFamily:FONT_SERIF,fontSize:17,fontWeight:500,outline:'none',width:'100%'}}/>
+              <input value={editPhone} onChange={e=>setEditPhone(e.target.value)} placeholder="Phone"
+                style={{background:C.bg,border:`1px solid ${C.border}`,color:C.text,padding:'7px 11px',borderRadius:2,fontFamily:'monospace',fontSize:12,outline:'none',width:'100%'}}/>
+            </div>
+          ):(
+            <>
+              <div style={{fontFamily:'Newsreader,Georgia,serif',fontSize:22,fontWeight:500,letterSpacing:'-.01em',color:C.text,lineHeight:1.1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.name}</div>
+              <div style={{marginTop:5,display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                <StatusBadge status={c.status}/>
+                {c.phone&&<span style={{fontSize:11,color:C.textDim,fontFamily:'monospace'}}>+{c.phone}</span>}
+              </div>
+            </>
+          )}
         </div>
-        <button onClick={onClose}
-          style={{width:32,height:32,borderRadius:'50%',background:C.bg2,border:`1px solid ${C.border}`,cursor:'pointer',color:C.textMid,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18,lineHeight:1}}>
-          ×
-        </button>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+          {!editMode&&(
+            <button onClick={startEdit}
+              style={{display:'flex',alignItems:'center',gap:5,background:C.terraDim,border:`1px solid ${C.terraPale}`,borderRadius:2,cursor:'pointer',color:C.terra,padding:'6px 12px',fontSize:12,fontWeight:500,fontFamily:'inherit'}}>
+              <IEdit size={11}/> Edit
+            </button>
+          )}
+          <button onClick={onClose}
+            style={{width:32,height:32,borderRadius:'50%',background:C.bg2,border:`1px solid ${C.border}`,cursor:'pointer',color:C.textMid,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:18,lineHeight:1}}>
+            ×
+          </button>
+        </div>
       </div>
 
       {/* ── Scrollable body ── */}
@@ -1171,17 +1330,50 @@ function DetailView({customer:c,templates,onClose,onUpdate,onUploadProof,onRemov
 
         {/* Order Items */}
         <Card sx={{marginBottom:14}}>
-          <SecTitle icon={IBox}>Order Items ({(c.orders||[]).length})</SecTitle>
-          <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
-            {(c.orders||[]).map((o,i)=>(
-              <div key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:2,padding:'12px 14px',fontSize:12.5,color:C.textMid,minWidth:128}}>
-                <div style={{fontWeight:600,color:C.textDim,fontSize:9.5,textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:9}}>Item {i+1}</div>
-                {o.colour&&<div style={{display:'flex',justifyContent:'space-between',gap:16,marginBottom:5}}><span style={{color:C.textDim}}>Colour</span><span style={{color:C.text}}>{o.colour}</span></div>}
-                {o.size  &&<div style={{display:'flex',justifyContent:'space-between',gap:16,marginBottom:5}}><span style={{color:C.textDim}}>Size</span><span style={{color:C.text}}>{o.size}</span></div>}
-                {o.style &&<div style={{display:'flex',justifyContent:'space-between',gap:16}}><span style={{color:C.textDim}}>Style</span><span style={{color:C.text}}>{o.style}</span></div>}
-              </div>
-            ))}
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div style={{fontWeight:600,fontSize:13.5,color:C.text,display:'flex',alignItems:'center',gap:8}}><IBox size={15} color={C.textDim}/> Order Items ({(editMode?editOrders:c.orders||[]).length})</div>
+            {editMode&&<Btn variant="ghost" small onClick={addEditItem}><IPlus size={11}/> Add Item</Btn>}
           </div>
+          {editMode?(
+            <div>
+              {editOrders.map((item,i)=>(
+                <div key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:2,padding:'12px 14px',marginBottom:8}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                    <div style={{fontSize:10,fontWeight:600,color:C.textDim,textTransform:'uppercase',letterSpacing:'0.1em'}}>Item {i+1}</div>
+                    {editOrders.length>1&&<button onClick={()=>removeEditItem(i)} style={{background:'transparent',border:'none',cursor:'pointer',color:C.textDim,padding:2,display:'flex'}}><ITrash size={12}/></button>}
+                  </div>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
+                    {[{k:'colour',l:'Colour'},{k:'size',l:'Size'},{k:'style',l:'Style'}].map(f=>(
+                      <div key={f.k}>
+                        <div style={{fontSize:9.5,fontWeight:600,color:C.textDim,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>{f.l}</div>
+                        <input value={item[f.k]||''} onChange={e=>updateEditItem(i,f.k,e.target.value)} placeholder={f.l}
+                          style={{width:'100%',background:C.surface,border:`1px solid ${C.border}`,color:C.text,padding:'7px 10px',borderRadius:2,fontFamily:'inherit',fontSize:12,outline:'none'}}/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {editOrders.length===0&&(
+                <div style={{textAlign:'center',padding:'20px',color:C.textDim,fontSize:12}}>No items. Click "Add Item" to add one.</div>
+              )}
+              {/* Save / Cancel row */}
+              <div style={{display:'flex',gap:8,marginTop:12,paddingTop:12,borderTop:`1px solid ${C.border}`}}>
+                <Btn variant="terra" small onClick={saveEdit} disabled={editSaving}>{editSaving?<><Spinner/> Saving…</>:<><ICheck size={11}/> Save Changes</>}</Btn>
+                <Btn variant="ghost" small onClick={cancelEdit}><IX size={11}/> Cancel</Btn>
+              </div>
+            </div>
+          ):(
+            <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+              {(c.orders||[]).map((o,i)=>(
+                <div key={i} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:2,padding:'12px 14px',fontSize:12.5,color:C.textMid,minWidth:128}}>
+                  <div style={{fontWeight:600,color:C.textDim,fontSize:9.5,textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:9}}>Item {i+1}</div>
+                  {o.colour&&<div style={{display:'flex',justifyContent:'space-between',gap:16,marginBottom:5}}><span style={{color:C.textDim}}>Colour</span><span style={{color:C.text}}>{o.colour}</span></div>}
+                  {o.size  &&<div style={{display:'flex',justifyContent:'space-between',gap:16,marginBottom:5}}><span style={{color:C.textDim}}>Size</span><span style={{color:C.text}}>{o.size}</span></div>}
+                  {o.style &&<div style={{display:'flex',justifyContent:'space-between',gap:16}}><span style={{color:C.textDim}}>Style</span><span style={{color:C.text}}>{o.style}</span></div>}
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
 
         {/* Price & Cost */}
@@ -1343,6 +1535,7 @@ function MainApp({session,preview}){
   const [refreshing,setRefreshing]=useState(false);
   const [toast,     setToast]    =useState(null);
   const [lightboxUrl,setLightboxUrl]=useState(null);
+  const [showNewOrder,setShowNewOrder]=useState(false);
 
   const showToast=(msg,type='success')=>{setToast({msg,type});setTimeout(()=>setToast(null),3000);};
 
@@ -1373,6 +1566,14 @@ function MainApp({session,preview}){
       .subscribe();
     return ()=>sb.removeChannel(channel);
   },[]);
+
+  async function handleAddSingleCustomer(customer){
+    try{
+      await dbInsertCustomers([customer]);
+      showToast('Order created!');
+      setShowNewOrder(false);
+    }catch(err){showToast('Failed to create: '+err.message,'error');throw err;}
+  }
 
   async function handleImport(groups,mode='update_orders'){
     try{
@@ -1528,7 +1729,7 @@ function MainApp({session,preview}){
       )}
 
       {/* Main views — dashboard always renders so it shows behind the detail drawer */}
-      {(view==='dashboard'||view==='detail')&&<DashboardView customers={customers} templates={templates} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpenDetail={id=>{setSelectedId(id);setView('detail');}} onDelete={handleDelete} onUpdateCustomer={handleUpdate} onRefresh={()=>loadAll(true)} refreshing={refreshing} showToast={showToast}/>}
+      {(view==='dashboard'||view==='detail')&&<DashboardView customers={customers} templates={templates} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpenDetail={id=>{setSelectedId(id);setView('detail');}} onDelete={handleDelete} onUpdateCustomer={handleUpdate} onRefresh={()=>loadAll(true)} refreshing={refreshing} showToast={showToast} onNewOrder={()=>setShowNewOrder(true)}/>}
       {view==='import'   &&<ImportView onBack={()=>setView('dashboard')} onImport={handleImport}/>}
       {view==='finance'  &&<FinanceView customers={customers} expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onExport={()=>exportToExcel(customers,expenses)}/>}
       {view==='templates'&&<TemplatesView templates={templates} onBack={()=>setView('dashboard')} onSave={handleSaveTemplates}/>}
@@ -1556,6 +1757,9 @@ function MainApp({session,preview}){
 
       {/* Lightbox */}
       {lightboxUrl&&<Lightbox src={lightboxUrl} onClose={()=>setLightboxUrl(null)}/>}
+
+      {/* New Order Modal */}
+      {showNewOrder&&<NewOrderModal onClose={()=>setShowNewOrder(false)} onSave={handleAddSingleCustomer}/>}
         </div>{/* ot-views */}
       </div>{/* ot-main */}
     </div>
