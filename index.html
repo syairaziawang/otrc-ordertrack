@@ -290,7 +290,7 @@ function Btn({children,onClick,variant='primary',small,disabled,href,target,rel,
     wa:{background:C.terra,color:'#fff'},
   };
   const base={display:'inline-flex',alignItems:'center',gap:7,border:'none',cursor:disabled?'not-allowed':'pointer',fontFamily:'inherit',fontWeight:500,letterSpacing:'.005em',borderRadius:2,transition:'opacity 0.15s',padding:small?'7px 15px':'11px 22px',fontSize:small?12.5:13.5,opacity:disabled?0.5:1,textDecoration:'none',...V[variant],...sx};
-  if(href) return <a href={href} target={target} rel={rel} style={base}>{children}</a>;
+  if(href) return <a href={href} target={target} rel={rel} onClick={onClick} style={base}>{children}</a>;
   return <button onClick={onClick} disabled={disabled} style={base}>{children}</button>;
 }
 
@@ -1425,11 +1425,26 @@ function DetailView({customer:c,templates,onClose,onUpdate,onUploadProof,onRemov
         {/* Ready WA */}
         <Card sx={{marginBottom:14}}>
           <SecTitle icon={IBox}>Ready for Pickup</SecTitle>
+          <label style={{display:'flex',alignItems:'center',gap:9,marginBottom:12,padding:'10px 12px',background:c.packed?C.terraDim:C.bg,border:`1px solid ${c.packed?C.terraPale:C.border}`,borderRadius:2,cursor:'pointer',fontSize:12.5,fontWeight:500,color:C.text}}>
+            <input type="checkbox" checked={!!c.packed}
+              onChange={e=>{
+                const packed=e.target.checked;
+                onUpdate({packed,packed_at:packed?new Date().toISOString():null});
+                showToast(packed?'Marked as packed':'Unmarked as packed');
+              }}
+              style={{width:15,height:15,accentColor:C.terra,cursor:'pointer',flexShrink:0}}/>
+            I've packed this order
+          </label>
           <div style={{background:C.bg,border:`1px solid ${C.border}`,borderLeft:`2px solid ${C.terra}`,borderRadius:'0 2px 2px 0',padding:'13px 15px',fontSize:11.5,lineHeight:1.85,color:C.textMid,whiteSpace:'pre-wrap',fontFamily:'monospace',maxHeight:130,overflowY:'auto',marginBottom:12}}>{rdyMsg}</div>
           <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-            <Btn variant="wa" small href={c.phone?waLink(c.phone,rdyMsg):'#'} target="_blank" rel="noopener"><IBox size={11}/> Open WhatsApp</Btn>
+            <Btn variant="wa" small href={c.phone&&c.packed?waLink(c.phone,rdyMsg):'#'} target="_blank" rel="noopener"
+              onClick={e=>{if(!c.packed){e.preventDefault();showToast('Check "I\'ve packed this order" first','error');}}}
+              sx={{opacity:c.packed?1:0.5,cursor:c.packed?'pointer':'not-allowed'}}>
+              <IBox size={11}/> Open WhatsApp
+            </Btn>
             <Btn variant="ghost" small onClick={()=>copy(rdyMsg,'rdy')}>{copied==='rdy'?<><ICheck size={11}/> Copied!</>:<><ICopy size={11}/> Copy</>}</Btn>
           </div>
+          {!c.packed&&<div style={{fontSize:10.5,color:C.textDim,marginTop:8}}>Check the box above once the order is packed to unlock this message.</div>}
         </Card>
 
         {/* Payment Proof */}
