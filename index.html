@@ -94,9 +94,6 @@ const STATUSES = {
   ready:        {label:'Ready for Pickup',color:'#3D4EDB',bg:'#F1F2FD',text:'#2B2B66',active:true, fill:true },
   collected:    {label:'Collected',       color:'#C2C2C8',bg:'#F2F2F4',text:'#8C8C94',active:false,fill:false},
 };
-const LONG_SLEEVE_SURCHARGE = 2;
-function isLongSleeve(style){ return (style||'').trim().toLowerCase()==='long sleeve'; }
-
 const STATUS_ORDER = ['new','invoice_sent','paid','ready','collected'];
 const STATUS_NEXT  = {new:'invoice_sent',invoice_sent:'paid',paid:'ready',ready:'collected'};
 const STATUS_NEXT_LABEL = {
@@ -785,20 +782,10 @@ function NewOrderModal({onClose,onSave}){
   const [phone,  setPhone] =useState('');
   const [items,  setItems] =useState([{...BLANK}]);
   const [notes,  setNotes] =useState('');
-  const [basePrice,setBasePrice]=useState('');
   const [price,  setPrice] =useState('');
-  const [priceTouched,setPriceTouched]=useState(false);
   const [cost,   setCost]  =useState('');
   const [saving, setSaving]=useState(false);
   const [err,    setErr]   =useState('');
-
-  const validItems=items.filter(o=>o.colour||o.size||o.style);
-  const longSleeveCount=validItems.filter(o=>isLongSleeve(o.style)).length;
-  const suggestedPrice=(Number(basePrice)||0)*validItems.length + longSleeveCount*LONG_SLEEVE_SURCHARGE;
-
-  useEffect(()=>{
-    if(!priceTouched) setPrice(suggestedPrice>0?String(suggestedPrice):'');
-  },[basePrice,JSON.stringify(items)]);
 
   function addItem(){ setItems(p=>[...p,{...BLANK}]); }
   function removeItem(i){ setItems(p=>p.filter((_,j)=>j!==i)); }
@@ -871,22 +858,8 @@ function NewOrderModal({onClose,onSave}){
           {/* Pricing */}
           <Card>
             <SecTitle icon={IDollar}>Pricing (optional)</SecTitle>
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
-              <div>
-                <label style={lbl}>Base Price / Item (BND)</label>
-                <input type="number" step="0.01" min="0" value={basePrice} onChange={e=>setBasePrice(e.target.value)} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/>
-              </div>
-            </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-              <div>
-                <label style={lbl}>Selling Price (BND)</label>
-                <input type="number" step="0.01" min="0" value={price} onChange={e=>{setPrice(e.target.value);setPriceTouched(true);}} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/>
-                {longSleeveCount>0&&(
-                  <div style={{fontSize:10,color:C.textDim,marginTop:4}}>
-                    Includes {longSleeveCount} long sleeve item{longSleeveCount!==1?'s':''} × ${LONG_SLEEVE_SURCHARGE.toFixed(2)} surcharge
-                  </div>
-                )}
-              </div>
+              <div><label style={lbl}>Selling Price (BND)</label><input type="number" step="0.01" min="0" value={price} onChange={e=>setPrice(e.target.value)} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/></div>
               <div><label style={lbl}>Order Cost (BND)</label><input type="number" step="0.01" min="0" value={cost} onChange={e=>setCost(e.target.value)} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/></div>
             </div>
           </Card>
@@ -1043,7 +1016,7 @@ function ImportView({onImport,onBack}){
   const [step,setStep]=useState('upload');
   const [headers,setHeaders]=useState([]);
   const [rawRows,setRawRows]=useState([]);
-  const [colMap,setColMap]=useState({name:'',phone:'',colour:'',size:'',style:''});
+  const [colMap,setColMap]=useState({name:'',phone:'',colour:'',size:'',style:'',price:''});
   const [prefix,setPrefix]=useState('673');
   const [drag,setDrag]=useState(false);
   const [importing,setImporting]=useState(false);
@@ -1051,7 +1024,7 @@ function ImportView({onImport,onBack}){
   const fileRef=useRef();
   const FIELDS=[
     {key:'name',label:'Customer Name ✱'},{key:'phone',label:'Phone Number ✱'},
-    {key:'colour',label:'Shirt Colour'},{key:'size',label:'Size'},{key:'style',label:'Style / Sleeve'},
+    {key:'colour',label:'Shirt Colour'},{key:'size',label:'Size'},{key:'style',label:'Style / Sleeve'},{key:'price',label:'Selling Price (BND)'},
   ];
   const MODES=[
     {id:'update_orders',label:'Update existing orders',desc:'Replaces order items for existing customers. Keeps their status, notes & payment proof. Best for correcting mistakes.',recommended:true},
@@ -1066,6 +1039,7 @@ function ImportView({onImport,onBack}){
       if(key==='colour') return l.includes('colour')||l.includes('color');
       if(key==='size')   return l.includes('size');
       if(key==='style')  return l.includes('style')||l.includes('sleeve');
+      if(key==='price')  return l.includes('price')||l.includes('selling')||l.includes('amount');
       return false;
     });
   }
@@ -1097,12 +1071,16 @@ function ImportView({onImport,onBack}){
       const phone=formatPhone(String(row[parseInt(colMap.phone)]??''),prefix);
       const name=String(row[parseInt(colMap.name)]??'').trim()||'Unknown';
       const key=phone||name;
-      if(!groups[key]) groups[key]={name,phone,orders:[]};
+      if(!groups[key]) groups[key]={name,phone,orders:[],price:0,hasPrice:false};
       const o={};
       if(colMap.colour) o.colour=String(row[parseInt(colMap.colour)]??'').trim();
       if(colMap.size)   o.size  =String(row[parseInt(colMap.size)]  ??'').trim();
       if(colMap.style)  o.style =String(row[parseInt(colMap.style)] ??'').trim();
       groups[key].orders.push(o);
+      if(colMap.price!==''){
+        const p=parseFloat(String(row[parseInt(colMap.price)]??'').replace(/[^0-9.\-]/g,''));
+        if(!isNaN(p)){groups[key].price+=p;groups[key].hasPrice=true;}
+      }
     });
     await onImport(Object.values(groups),importMode);
     setImporting(false);
@@ -1140,6 +1118,7 @@ function ImportView({onImport,onBack}){
               </div>
             ))}
           </div>
+          {colMap.price!==''&&<div style={{fontSize:11,color:C.textDim,marginTop:-10,marginBottom:16}}>If a customer has several rows, their Selling Price will be summed across all of them.</div>}
           <div style={{display:'flex',alignItems:'center',gap:10,paddingTop:14,borderTop:`1px solid ${C.border}`,marginBottom:20,flexWrap:'wrap'}}>
             <span style={{fontSize:12,color:C.textMid,fontWeight:500}}>Country code prefix:</span>
             <input value={prefix} onChange={e=>setPrefix(e.target.value.replace(/\D/g,''))} maxLength={5}
@@ -1169,10 +1148,10 @@ function ImportView({onImport,onBack}){
           <div style={{fontSize:10,fontWeight:600,letterSpacing:'0.8px',textTransform:'uppercase',color:C.textDim,marginBottom:8}}>Preview — first 3 rows</div>
           <div style={{overflowX:'auto',borderRadius:2,border:`1px solid ${C.border}`,marginBottom:20}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
-              <thead><tr style={{background:C.bg2}}>{['Name','Phone','Colour','Size','Style'].map(h=><th key={h} style={{padding:'7px 12px',textAlign:'left',color:C.textDim,fontWeight:600,fontSize:10,textTransform:'uppercase',letterSpacing:'0.8px',borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
+              <thead><tr style={{background:C.bg2}}>{['Name','Phone','Colour','Size','Style','Price'].map(h=><th key={h} style={{padding:'7px 12px',textAlign:'left',color:C.textDim,fontWeight:600,fontSize:10,textTransform:'uppercase',letterSpacing:'0.8px',borderBottom:`1px solid ${C.border}`}}>{h}</th>)}</tr></thead>
               <tbody>{rawRows.slice(0,3).map((row,i)=>(
                 <tr key={i} style={{borderBottom:`1px solid ${C.border}`}}>
-                  {['name','phone','colour','size','style'].map(k=>(
+                  {['name','phone','colour','size','style','price'].map(k=>(
                     <td key={k} style={{padding:'7px 12px',color:C.textMid}}>{colMap[k]!==''?String(row[parseInt(colMap[k])]??''):'—'}</td>
                   ))}
                 </tr>
@@ -1627,17 +1606,23 @@ function MainApp({session,preview}){
             // skip — customer already exists
           } else if(mode==='update_orders'){
             // replace orders, keep status/notes/proof
-            toUpdate.push({id:ex.id,orders:g.orders});
+            const upd={id:ex.id,orders:g.orders};
+            if(g.hasPrice) upd.price=g.price;
+            toUpdate.push(upd);
           } else {
             // merge_orders — append new rows on top
-            toUpdate.push({id:ex.id,orders:[...(ex.orders||[]),...g.orders]});
+            const upd={id:ex.id,orders:[...(ex.orders||[]),...g.orders]};
+            if(g.hasPrice) upd.price=Number(ex.price||0)+g.price;
+            toUpdate.push(upd);
           }
         } else {
-          toInsert.push({name:g.name,phone:g.phone,orders:g.orders,status:'new',notes:'',status_history:[]});
+          const ins={name:g.name,phone:g.phone,orders:g.orders,status:'new',notes:'',status_history:[]};
+          if(g.hasPrice) ins.price=g.price;
+          toInsert.push(ins);
         }
       });
       if(toInsert.length) await dbInsertCustomers(toInsert);
-      for(const u of toUpdate) await dbUpdateCustomer(u.id,{orders:u.orders});
+      for(const u of toUpdate) await dbUpdateCustomer(u.id,u.price!==undefined?{orders:u.orders,price:u.price}:{orders:u.orders});
       const modeLabel=mode==='add_new'?'skipped existing':mode==='update_orders'?'orders updated':'orders merged';
       showToast(`${toInsert.length} new · ${toUpdate.length} ${modeLabel}`);
       setView('dashboard');
