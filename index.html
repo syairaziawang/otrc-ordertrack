@@ -94,6 +94,9 @@ const STATUSES = {
   ready:        {label:'Ready for Pickup',color:'#3D4EDB',bg:'#F1F2FD',text:'#2B2B66',active:true, fill:true },
   collected:    {label:'Collected',       color:'#C2C2C8',bg:'#F2F2F4',text:'#8C8C94',active:false,fill:false},
 };
+const LONG_SLEEVE_SURCHARGE = 2;
+function isLongSleeve(style){ return (style||'').trim().toLowerCase()==='long sleeve'; }
+
 const STATUS_ORDER = ['new','invoice_sent','paid','ready','collected'];
 const STATUS_NEXT  = {new:'invoice_sent',invoice_sent:'paid',paid:'ready',ready:'collected'};
 const STATUS_NEXT_LABEL = {
@@ -782,10 +785,20 @@ function NewOrderModal({onClose,onSave}){
   const [phone,  setPhone] =useState('');
   const [items,  setItems] =useState([{...BLANK}]);
   const [notes,  setNotes] =useState('');
+  const [basePrice,setBasePrice]=useState('');
   const [price,  setPrice] =useState('');
+  const [priceTouched,setPriceTouched]=useState(false);
   const [cost,   setCost]  =useState('');
   const [saving, setSaving]=useState(false);
   const [err,    setErr]   =useState('');
+
+  const validItems=items.filter(o=>o.colour||o.size||o.style);
+  const longSleeveCount=validItems.filter(o=>isLongSleeve(o.style)).length;
+  const suggestedPrice=(Number(basePrice)||0)*validItems.length + longSleeveCount*LONG_SLEEVE_SURCHARGE;
+
+  useEffect(()=>{
+    if(!priceTouched) setPrice(suggestedPrice>0?String(suggestedPrice):'');
+  },[basePrice,JSON.stringify(items)]);
 
   function addItem(){ setItems(p=>[...p,{...BLANK}]); }
   function removeItem(i){ setItems(p=>p.filter((_,j)=>j!==i)); }
@@ -858,8 +871,22 @@ function NewOrderModal({onClose,onSave}){
           {/* Pricing */}
           <Card>
             <SecTitle icon={IDollar}>Pricing (optional)</SecTitle>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:12}}>
+              <div>
+                <label style={lbl}>Base Price / Item (BND)</label>
+                <input type="number" step="0.01" min="0" value={basePrice} onChange={e=>setBasePrice(e.target.value)} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/>
+              </div>
+            </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
-              <div><label style={lbl}>Selling Price (BND)</label><input type="number" step="0.01" min="0" value={price} onChange={e=>setPrice(e.target.value)} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/></div>
+              <div>
+                <label style={lbl}>Selling Price (BND)</label>
+                <input type="number" step="0.01" min="0" value={price} onChange={e=>{setPrice(e.target.value);setPriceTouched(true);}} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/>
+                {longSleeveCount>0&&(
+                  <div style={{fontSize:10,color:C.textDim,marginTop:4}}>
+                    Includes {longSleeveCount} long sleeve item{longSleeveCount!==1?'s':''} × ${LONG_SLEEVE_SURCHARGE.toFixed(2)} surcharge
+                  </div>
+                )}
+              </div>
               <div><label style={lbl}>Order Cost (BND)</label><input type="number" step="0.01" min="0" value={cost} onChange={e=>setCost(e.target.value)} placeholder="0.00" style={{...inp,fontFamily:'monospace'}}/></div>
             </div>
           </Card>
