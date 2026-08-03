@@ -153,7 +153,7 @@ function buildUploadLink(customerId){
 function buildMsg(tmpl,c){
   return tmpl.replace(/{name}/g,c.name).replace(/{phone}/g,c.phone||'')
     .replace(/{orders}/g,buildOrderText(c.orders)).replace(/{count}/g,String((c.orders||[]).length))
-    .replace(/{upload_link}/g,buildUploadLink(c.id));
+    .replace(/{price}/g,fmt(c.price)).replace(/{upload_link}/g,buildUploadLink(c.id));
 }
 const waLink=(phone,msg)=>`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
 
@@ -1516,7 +1516,7 @@ function DetailView({customer:c,templates,onClose,onUpdate,onUploadProof,onRemov
 function TemplatesView({templates,onSave,onBack}){
   const [tmpl,setTmpl]=useState({...templates});
   const [saving,setSaving]=useState(false);
-  const TAGS=['{name}','{phone}','{orders}','{count}','{upload_link}'];
+  const TAGS=['{name}','{phone}','{orders}','{count}','{price}','{upload_link}'];
   const ITEMS=[{key:'invoice',label:'Invoice / Confirmation Message'},{key:'ready',label:'Ready for Pickup Message'}];
   async function doSave(){setSaving(true);await onSave(tmpl);setSaving(false);}
   return (
