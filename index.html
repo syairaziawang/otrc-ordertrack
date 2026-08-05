@@ -57,6 +57,7 @@ const C = {
   terra:'#3D4EDB',terraPale:'#E7E9FB',terraDim:'#F4F4FC',
   sage:'#3F7D5A',sagePale:'#E8F1EB',
   peach:'#3D4EDB',dust:'#9A9AA2',
+  flag:'#B7791F',flagPale:'#FBF1DE',flagPaleHover:'#F5E6C8',
 };
 const FONT_SERIF='Newsreader,Georgia,serif';
 
@@ -361,6 +362,7 @@ function CustomerUploadPage({customerId}){
       const {error:dbErr}=await sb.from('customers').update({
         payment_proof_url:urlData.publicUrl,
         payment_proof_at:new Date().toISOString(),
+        payment_proof_seen:false,
         updated_at:new Date().toISOString(),
       }).eq('id',customerId);
       if(dbErr) throw dbErr;
@@ -953,6 +955,7 @@ function DashboardView({customers,templates,search,setSearch,statusFilter,setSta
           </div>
         ):(
           <div style={{overflowX:'auto'}}>
+            <style>{`@keyframes flagPulse{0%,100%{opacity:1}50%{opacity:.4}}`}</style>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
               <thead>
                 <tr style={{background:C.bg2}}>
@@ -966,13 +969,24 @@ function DashboardView({customers,templates,search,setSearch,statusFilter,setSta
                   const invMsg=buildMsg(templates.invoice,c);
                   const rdyMsg=buildMsg(templates.ready,c);
                   const canPickup=['paid','ready','collected'].includes(c.status);
-                  const rowBg=i%2===0?C.card:C.surface;
+                  const hasNewProof=!!c.payment_proof_url&&c.payment_proof_seen===false;
+                  const rowBg=hasNewProof?C.flagPale:(i%2===0?C.card:C.surface);
+                  const rowHoverBg=hasNewProof?C.flagPaleHover:C.terraDim;
                   return (
                     <tr key={c.id} style={{borderBottom:`1px solid ${C.border}`,background:rowBg,cursor:'pointer',transition:'background 0.12s'}}
-                      onMouseEnter={e=>e.currentTarget.style.background=C.terraDim}
+                      onMouseEnter={e=>e.currentTarget.style.background=rowHoverBg}
                       onMouseLeave={e=>e.currentTarget.style.background=rowBg}
                       onClick={()=>onOpenDetail(c.id)}>
-                      <td style={{padding:'16px 16px',fontWeight:500,color:C.text,letterSpacing:'-.005em'}}>{c.name}</td>
+                      <td style={{padding:'16px 16px',fontWeight:500,color:C.text,letterSpacing:'-.005em',borderLeft:hasNewProof?`3px solid ${C.flag}`:'3px solid transparent'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8}}>
+                          {c.name}
+                          {hasNewProof&&(
+                            <span style={{display:'inline-flex',alignItems:'center',gap:4,fontSize:9.5,fontWeight:600,color:C.flag,background:'#fff',border:`1px solid ${C.flag}`,borderRadius:20,padding:'2px 8px 2px 6px',letterSpacing:'.03em',textTransform:'uppercase',whiteSpace:'nowrap',animation:'flagPulse 1.8s ease-in-out infinite'}}>
+                              <IImg size={10}/> New proof
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td style={{padding:'16px 16px',color:C.textMid,fontSize:13,fontVariantNumeric:'tabular-nums'}}>{c.phone?`+${c.phone}`:'—'}</td>
                       <td style={{padding:'16px 16px',color:C.textMid,textAlign:'center'}}>{(c.orders||[]).length}</td>
                       <td style={{padding:'16px 16px'}}><StatusBadge status={c.status}/></td>
@@ -1579,7 +1593,13 @@ function MainApp({session,preview}){
         setCustomers(prev=>[p.new,...prev.filter(c=>c.id!==p.new.id)]);
       })
       .on('postgres_changes',{event:'UPDATE',schema:'public',table:'customers'},(p)=>{
-        setCustomers(prev=>prev.map(c=>c.id===p.new.id?p.new:c));
+        setCustomers(prev=>{
+          const old=prev.find(c=>c.id===p.new.id);
+          if(old&&p.new.payment_proof_seen===false&&p.new.payment_proof_at!==old.payment_proof_at){
+            showToast(`📸 Payment screenshot uploaded — ${p.new.name}`);
+          }
+          return prev.map(c=>c.id===p.new.id?p.new:c);
+        });
       })
       .on('postgres_changes',{event:'DELETE',schema:'public',table:'customers'},(p)=>{
         setCustomers(prev=>prev.filter(c=>c.id!==p.old.id));
@@ -1756,7 +1776,7 @@ function MainApp({session,preview}){
       )}
 
       {/* Main views — dashboard always renders so it shows behind the detail drawer */}
-      {(view==='dashboard'||view==='detail')&&<DashboardView customers={customers} templates={templates} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpenDetail={id=>{setSelectedId(id);setView('detail');}} onDelete={handleDelete} onUpdateCustomer={handleUpdate} onRefresh={()=>loadAll(true)} refreshing={refreshing} showToast={showToast} onNewOrder={()=>setShowNewOrder(true)}/>}
+      {(view==='dashboard'||view==='detail')&&<DashboardView customers={customers} templates={templates} search={search} setSearch={setSearch} statusFilter={statusFilter} setStatusFilter={setStatusFilter} onOpenDetail={id=>{setSelectedId(id);setView('detail');const cust=customers.find(c=>c.id===id);if(cust&&cust.payment_proof_url&&cust.payment_proof_seen===false)handleUpdate(id,{payment_proof_seen:true});}} onDelete={handleDelete} onUpdateCustomer={handleUpdate} onRefresh={()=>loadAll(true)} refreshing={refreshing} showToast={showToast} onNewOrder={()=>setShowNewOrder(true)}/>}
       {view==='import'   &&<ImportView onBack={()=>setView('dashboard')} onImport={handleImport}/>}
       {view==='finance'  &&<FinanceView customers={customers} expenses={expenses} onAddExpense={handleAddExpense} onDeleteExpense={handleDeleteExpense} onExport={()=>exportToExcel(customers,expenses)}/>}
       {view==='templates'&&<TemplatesView templates={templates} onBack={()=>setView('dashboard')} onSave={handleSaveTemplates}/>}
